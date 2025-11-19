@@ -2,8 +2,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChartJSOrUndefined } from "react-chartjs-2";
 
+import type { Chart as ChartJS } from "chart.js";
 import { NoteEditor } from "../components/NoteEditor";
 import { DashboardChart } from "../components/DashboardChart";
 import {
@@ -12,7 +12,7 @@ import {
   type FredSeriesResponse,
 } from "../lib/fred";
 
-type ChartInstance = ChartJSOrUndefined<"line", number[], unknown>;
+type ChartInstance = ChartJS<"line", number[], unknown> | null;
 
 type SelectionState = {
   series1: FredSeriesId | "";
@@ -39,7 +39,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const chartRef = useRef<ChartInstance | null>(null);
+  const chartRef = useRef<ChartInstance>(null);
 
   const activeSeries = useMemo(
     () =>
@@ -228,10 +228,12 @@ export default function Dashboard() {
 
             {!error && (
               <DashboardChart
-                ref={chartRef}
                 data={data}
                 note={note}
                 selectedSeries={activeSeries}
+                onChartReady={(chart) => {
+                  chartRef.current = chart;
+                }}
               />
             )}
           </div>

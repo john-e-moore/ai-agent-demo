@@ -11,8 +11,7 @@ import {
   type Plugin,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
-import { forwardRef } from "react";
-import type { ChartJSOrUndefined } from "react-chartjs-2";
+import { useEffect, useRef } from "react";
 
 import type { FredSeriesId, FredSeriesResponse } from "../lib/fred";
 import { NBER_RECESSIONS } from "../lib/recessions";
@@ -27,12 +26,13 @@ ChartJS.register(
   Filler,
 );
 
-type ChartInstance = ChartJSOrUndefined<"line", number[], unknown>;
+type ChartInstance = ChartJS<"line", number[], unknown> | null;
 
 type DashboardChartProps = {
   data: FredSeriesResponse | null;
   note: string;
   selectedSeries: FredSeriesId[];
+  onChartReady?: (chart: ChartInstance) => void;
 };
 
 const RECESSION_PLUGIN_ID = "nberRecessions";
@@ -111,112 +111,124 @@ const SERIES_COLORS = [
   },
 ];
 
-export const DashboardChart = forwardRef<ChartInstance, DashboardChartProps>(
-  function DashboardChart({ data, note, selectedSeries }, ref) {
-    const labels = data?.dates ?? [];
+export function DashboardChart({
+  data,
+  note,
+  selectedSeries,
+  onChartReady,
+}: DashboardChartProps) {
+  const labels = data?.dates ?? [];
 
-    const datasets =
-      data?.series.map((series, index) => {
-        const palette = SERIES_COLORS[index % SERIES_COLORS.length];
-        return {
-          label: series.title,
-          data: series.values,
-          borderColor: palette.borderColor,
-          backgroundColor: palette.backgroundColor,
-          pointRadius: 0,
-          borderWidth: 1.6,
-          spanGaps: true,
-          tension: 0.1,
-        };
-      }) ?? [];
+  const datasets =
+    data?.series.map((series, index) => {
+      const palette = SERIES_COLORS[index % SERIES_COLORS.length];
+      return {
+        label: series.title,
+        data: series.values,
+        borderColor: palette.borderColor,
+        backgroundColor: palette.backgroundColor,
+        pointRadius: 0,
+        borderWidth: 1.6,
+        spanGaps: true,
+        tension: 0.1,
+      };
+    }) ?? [];
 
-    const options: ChartOptions<"line"> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: {
-          position: "top",
-          labels: {
-            usePointStyle: true,
-            pointStyle: "line",
-            boxWidth: 24,
-            font: {
-              size: 11,
-            },
-          },
-        },
-        tooltip: {
-          mode: "index",
-          intersect: false,
-          callbacks: {
-            title(items) {
-              if (!items.length) return "";
-              return String(items[0].label);
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 8,
-          },
-          grid: {
-            display: false,
-          },
-        },
-        y: {
-          ticks: {
-            maxTicksLimit: 6,
-          },
-          grid: {
-            color: "rgba(148, 163, 184, 0.2)",
-          },
-        },
-      },
-    };
+  const chartRef = useRef<ChartInstance>(null);
 
-    if (!labels.length || !datasets.length) {
-      const labelText = selectedSeries.length
-        ? "Fetching data from FRED for the selected series…"
-        : "Choose at least one series to see a chart.";
-
-      return (
-        <div className="flex h-64 w-full items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
-          <div className="flex max-w-xs flex-col items-center gap-1 text-center">
-            <span>{labelText}</span>
-            {note && (
-              <span className="text-[10px] text-slate-400">
-                (A note is already saved and will appear alongside the chart.)
-              </span>
-            )}
-          </div>
-        </div>
-      );
+  useEffect(() => {
+    if (onChartReady) {
+      onChartReady(chartRef.current);
     }
+  }, [onChartReady, labels.length, datasets.length]);
+
+  const options: ChartOptions<"line"> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+      legend: {
+        position: "top",
+        labels: {
+          usePointStyle: true,
+          pointStyle: "line",
+          boxWidth: 24,
+          font: {
+            size: 11,
+          },
+        },
+      },
+      tooltip: {
+        mode: "index",
+        intersect: false,
+        callbacks: {
+          title(items) {
+            if (!items.length) return "";
+            return String(items[0].label);
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 8,
+        },
+        grid: {
+          display: false,
+        },
+      },
+      y: {
+        ticks: {
+          maxTicksLimit: 6,
+        },
+        grid: {
+          color: "rgba(148, 163, 184, 0.2)",
+        },
+      },
+    },
+  };
+
+  if (!labels.length || !datasets.length) {
+    const labelText = selectedSeries.length
+      ? "Fetching data from FRED for the selected series…"
+      : "Choose at least one series to see a chart.";
 
     return (
-      <div className="flex h-[320px] w-full flex-col gap-2">
-        <Line
-          ref={ref}
-          data={{
-            labels,
-            datasets,
-          }}
-          options={options}
-        />
-        {note && (
-          <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
-            <span className="font-medium text-slate-700">Note: </span>
-            {note}
-          </div>
-        )}
+      <div className="flex h-64 w-full items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
+        <div className="flex max-w-xs flex-col items-center gap-1 text-center">
+          <span>{labelText}</span>
+          {note && (
+            <span className="text-[10px] text-slate-400">
+              (A note is already saved and will appear alongside the chart.)
+            </span>
+          )}
+        </div>
       </div>
     );
-  },
-);
+  }
+
+  return (
+    <div className="flex h-[320px] w-full flex-col gap-2">
+      <Line
+        ref={chartRef}
+        data={{
+          labels,
+          datasets,
+        }}
+        options={options}
+      />
+      {note && (
+        <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
+          <span className="font-medium text-slate-700">Note: </span>
+          {note}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 
