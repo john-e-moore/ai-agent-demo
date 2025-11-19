@@ -32,7 +32,7 @@ export default function RootLayout({
           <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div className="flex items-center gap-4">
-                <div className="relative h-12 w-12 sm:h-14 sm:w-14">
+                <div className="relative h-16 w-16 sm:h-16 sm:w-28">
                   <Image
                     src="/images/logo.png"
                     alt="Dashboard logo"
