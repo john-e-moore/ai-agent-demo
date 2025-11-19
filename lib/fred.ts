@@ -1,16 +1,33 @@
-export type LaborMetricId = "unemployment" | "participation" | "earnings";
+export type LaborMetricId =
+  | "unemployment"
+  | "participation"
+  | "earnings"
+  | "cpi";
 
-export type AgeBandId = "all" | "age_16_19";
+export type AgeBandId =
+  | "all"
+  | "age_16_19"
+  | "age_20_24"
+  | "age_25_54"
+  | "age_55_plus";
 
 export type FredSeriesId =
   // Unemployment rate
   | "UNRATE" // Unemployment Rate: 16 years and over
   | "LNS14000012" // Unemployment Rate: 16 to 19 years
+  | "LNS14000016" // Unemployment Rate: 20 to 24 years
+  | "LNS14000089" // Unemployment Rate: 25 to 54 years
+  | "LNS14000097" // Unemployment Rate: 55 years and over
   // Labor force participation
   | "CIVPART" // Labor Force Participation Rate: 16 years and over
   | "LNS11300012" // Labor Force Participation Rate: 16 to 19 years
+  | "LNS11300016" // Labor Force Participation Rate: 20 to 24 years
+  | "LNS11300060" // Labor Force Participation Rate: 25 to 54 years
+  | "LNS11300097" // Labor Force Participation Rate: 55 years and over
   // Median usual weekly earnings (all workers)
-  | "LEU0252881600A";
+  | "LEU0252881600A"
+  // Consumer Price Index (all urban consumers, all items)
+  | "CPIAUCSL";
 
 export type LaborSeriesConfig = {
   id: FredSeriesId;
@@ -33,6 +50,24 @@ export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
     label: "Unemployment rate, 16 to 19 year-olds",
   },
   {
+    id: "LNS14000016",
+    metric: "unemployment",
+    ageBand: "age_20_24",
+    label: "Unemployment rate, 20 to 24 year-olds",
+  },
+  {
+    id: "LNS14000089",
+    metric: "unemployment",
+    ageBand: "age_25_54",
+    label: "Unemployment rate, 25 to 54 year-olds",
+  },
+  {
+    id: "LNS14000097",
+    metric: "unemployment",
+    ageBand: "age_55_plus",
+    label: "Unemployment rate, 55 years and over",
+  },
+  {
     id: "CIVPART",
     metric: "participation",
     ageBand: "all",
@@ -45,11 +80,36 @@ export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
     label: "Labor force participation rate, 16 to 19 year-olds",
   },
   {
+    id: "LNS11300016",
+    metric: "participation",
+    ageBand: "age_20_24",
+    label: "Labor force participation rate, 20 to 24 year-olds",
+  },
+  {
+    id: "LNS11300060",
+    metric: "participation",
+    ageBand: "age_25_54",
+    label: "Labor force participation rate, 25 to 54 year-olds",
+  },
+  {
+    id: "LNS11300097",
+    metric: "participation",
+    ageBand: "age_55_plus",
+    label: "Labor force participation rate, 55 years and over",
+  },
+  {
     id: "LEU0252881600A",
     metric: "earnings",
     ageBand: "all",
     label:
       "Median usual weekly real earnings, full-time wage and salary workers (16 years and over)",
+  },
+  {
+    id: "CPIAUCSL",
+    metric: "cpi",
+    ageBand: "all",
+    label:
+      "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (CPI-U)",
   },
 ];
 
@@ -66,6 +126,10 @@ export const LABOR_METRICS: { id: LaborMetricId; label: string }[] = [
     id: "earnings",
     label: "Median weekly earnings",
   },
+  {
+    id: "cpi",
+    label: "Consumer Price Index (CPI-U)",
+  },
 ];
 
 export const AGE_BANDS: { id: AgeBandId; label: string }[] = [
@@ -76,6 +140,18 @@ export const AGE_BANDS: { id: AgeBandId; label: string }[] = [
   {
     id: "age_16_19",
     label: "16–19 year-olds",
+  },
+  {
+    id: "age_20_24",
+    label: "20–24 year-olds",
+  },
+  {
+    id: "age_25_54",
+    label: "25–54 year-olds",
+  },
+  {
+    id: "age_55_plus",
+    label: "55 years and over",
   },
 ];
 
