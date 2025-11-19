@@ -32,18 +32,18 @@ export default function RootLayout({
           <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3">
-                <div className="relative h-9 w-9 rounded-md bg-slate-100 ring-1 ring-slate-200">
+                <div className="relative h-10 w-10">
                   <Image
                     src="/images/logo.png"
                     alt="Dashboard logo"
                     fill
                     sizes="36px"
-                    className="rounded-md object-contain p-1.5"
+                    className="object-contain"
                     priority
                   />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-sm font-semibold tracking-tight text-slate-900">
+                  <span className="text-base font-semibold tracking-tight text-slate-900">
                     TLG Macro Dashboard
                   </span>
                 </div>

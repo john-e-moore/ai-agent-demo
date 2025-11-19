@@ -34,6 +34,8 @@ type DashboardChartProps = {
   selectedSeries: FredSeriesId[];
   dualAxisEnabled: boolean;
   onChartReady?: (chart: ChartInstance) => void;
+  minDate?: string;
+  maxDate?: string;
 };
 
 const RECESSION_PLUGIN_ID = "nberRecessions";
@@ -119,7 +121,23 @@ export function DashboardChart({
   dualAxisEnabled,
   onChartReady,
 }: DashboardChartProps) {
-  const labels = data?.dates ?? [];
+  const rawLabels = data?.dates ?? [];
+
+  const withinRange = (date: string) => {
+    if (minDate && date < minDate) return false;
+    if (maxDate && date > maxDate) return false;
+    return true;
+  };
+
+  const activeIndexes: number[] = [];
+  const labels: string[] = [];
+
+  rawLabels.forEach((date, index) => {
+    if (withinRange(date)) {
+      activeIndexes.push(index);
+      labels.push(date);
+    }
+  });
 
   const datasets =
     data?.series.map((series, index) => {
@@ -131,7 +149,10 @@ export function DashboardChart({
 
       return {
         label: series.title,
-        data: series.values,
+        data:
+          activeIndexes.length > 0
+            ? activeIndexes.map((i) => series.values[i] ?? null)
+            : [],
         borderColor: palette.borderColor,
         backgroundColor: palette.backgroundColor,
         pointRadius: 0,
@@ -234,14 +255,6 @@ export function DashboardChart({
   return (
     <div className="flex h-[320px] w-full flex-col gap-2">
       <div className="relative flex-1">
-        <div className="pointer-events-none absolute inset-4 z-0 flex items-center justify-center opacity-5">
-          <img
-            src="/images/logo.png"
-            alt=""
-            className="max-h-full max-w-full object-contain"
-            aria-hidden="true"
-          />
-        </div>
         <Line
           ref={chartRef}
           data={{
