@@ -1,35 +1,81 @@
-export type FredSeriesId =
-  | "GDP"
-  | "UNRATE"
-  | "CPIAUCSL"
-  | "FEDFUNDS"
-  | "DGS10";
+export type LaborMetricId = "unemployment" | "participation" | "earnings";
 
-export type FredSeriesOption = {
+export type AgeBandId = "all" | "age_16_19";
+
+export type FredSeriesId =
+  // Unemployment rate
+  | "UNRATE" // Unemployment Rate: 16 years and over
+  | "LNS14000012" // Unemployment Rate: 16 to 19 years
+  // Labor force participation
+  | "CIVPART" // Labor Force Participation Rate: 16 years and over
+  | "LNS11300012" // Labor Force Participation Rate: 16 to 19 years
+  // Median usual weekly earnings (all workers)
+  | "LEU0252881600A";
+
+export type LaborSeriesConfig = {
   id: FredSeriesId;
+  metric: LaborMetricId;
+  ageBand: AgeBandId;
   label: string;
 };
 
-export const FRED_SERIES_OPTIONS: FredSeriesOption[] = [
-  {
-    id: "GDP",
-    label: "Real Gross Domestic Product (quarterly, chained 2017 dollars)",
-  },
+export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
   {
     id: "UNRATE",
-    label: "Unemployment Rate (monthly, %)",
+    metric: "unemployment",
+    ageBand: "all",
+    label: "Unemployment rate, all workers (16 years and over)",
   },
   {
-    id: "CPIAUCSL",
-    label: "CPI for All Urban Consumers (monthly, index)",
+    id: "LNS14000012",
+    metric: "unemployment",
+    ageBand: "age_16_19",
+    label: "Unemployment rate, 16 to 19 year-olds",
   },
   {
-    id: "FEDFUNDS",
-    label: "Effective Federal Funds Rate (daily, %)",
+    id: "CIVPART",
+    metric: "participation",
+    ageBand: "all",
+    label: "Labor force participation rate, all workers (16 years and over)",
   },
   {
-    id: "DGS10",
-    label: "10-Year Treasury Constant Maturity Rate (daily, %)",
+    id: "LNS11300012",
+    metric: "participation",
+    ageBand: "age_16_19",
+    label: "Labor force participation rate, 16 to 19 year-olds",
+  },
+  {
+    id: "LEU0252881600A",
+    metric: "earnings",
+    ageBand: "all",
+    label:
+      "Median usual weekly real earnings, full-time wage and salary workers (16 years and over)",
+  },
+];
+
+export const LABOR_METRICS: { id: LaborMetricId; label: string }[] = [
+  {
+    id: "unemployment",
+    label: "Unemployment rate",
+  },
+  {
+    id: "participation",
+    label: "Labor force participation rate",
+  },
+  {
+    id: "earnings",
+    label: "Median weekly earnings",
+  },
+];
+
+export const AGE_BANDS: { id: AgeBandId; label: string }[] = [
+  {
+    id: "all",
+    label: "All workers (16 years and over)",
+  },
+  {
+    id: "age_16_19",
+    label: "16–19 year-olds",
   },
 ];
 
@@ -56,6 +102,15 @@ export type FredSeriesResponse = {
     values: (number | null)[];
   }[];
 };
+
+export function findLaborSeriesConfig(
+  metric: LaborMetricId,
+  ageBand: AgeBandId,
+): LaborSeriesConfig | undefined {
+  return LABOR_SERIES_CONFIG.find(
+    (config) => config.metric === metric && config.ageBand === ageBand,
+  );
+}
 
 type FredApiObservation = {
   date: string;
@@ -126,7 +181,7 @@ export async function fetchFredSeries(
   return {
     id: seriesId,
     title:
-      FRED_SERIES_OPTIONS.find((option) => option.id === seriesId)?.label ??
+      LABOR_SERIES_CONFIG.find((option) => option.id === seriesId)?.label ??
       seriesId,
     units: json.units ?? null,
     frequency: json.observation_end ? null : null,
