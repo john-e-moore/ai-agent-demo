@@ -1,7 +1,5 @@
 import { Suspense } from "react";
-import dynamic from "next/dynamic";
-
-const Dashboard = dynamic(() => import("./dashboard"), { ssr: false });
+import Dashboard from "./dashboard";
 
 export default function Home() {
   return (
