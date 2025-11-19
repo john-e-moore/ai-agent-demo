@@ -120,6 +120,8 @@ export function DashboardChart({
   selectedSeries,
   dualAxisEnabled,
   onChartReady,
+  minDate,
+  maxDate,
 }: DashboardChartProps) {
   const rawLabels = data?.dates ?? [];
 
