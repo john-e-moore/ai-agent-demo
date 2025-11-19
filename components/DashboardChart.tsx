@@ -32,6 +32,7 @@ type DashboardChartProps = {
   data: FredSeriesResponse | null;
   note: string;
   selectedSeries: FredSeriesId[];
+  dualAxisEnabled: boolean;
   onChartReady?: (chart: ChartInstance) => void;
 };
 
@@ -115,6 +116,7 @@ export function DashboardChart({
   data,
   note,
   selectedSeries,
+  dualAxisEnabled,
   onChartReady,
 }: DashboardChartProps) {
   const labels = data?.dates ?? [];
@@ -122,6 +124,11 @@ export function DashboardChart({
   const datasets =
     data?.series.map((series, index) => {
       const palette = SERIES_COLORS[index % SERIES_COLORS.length];
+      const yAxisID =
+        dualAxisEnabled && index === 1
+          ? ("y2" as const)
+          : ("y" as const);
+
       return {
         label: series.title,
         data: series.values,
@@ -131,6 +138,7 @@ export function DashboardChart({
         borderWidth: 1.6,
         spanGaps: true,
         tension: 0.1,
+        yAxisID,
       };
     }) ?? [];
 
@@ -188,6 +196,19 @@ export function DashboardChart({
           color: "rgba(148, 163, 184, 0.2)",
         },
       },
+      ...(dualAxisEnabled
+        ? {
+            y2: {
+              position: "right",
+              ticks: {
+                maxTicksLimit: 6,
+              },
+              grid: {
+                drawOnChartArea: false,
+              },
+            },
+          }
+        : {}),
     },
   };
 
@@ -212,14 +233,24 @@ export function DashboardChart({
 
   return (
     <div className="flex h-[320px] w-full flex-col gap-2">
-      <Line
-        ref={chartRef}
-        data={{
-          labels,
-          datasets,
-        }}
-        options={options}
-      />
+      <div className="relative flex-1">
+        <div className="pointer-events-none absolute inset-4 z-0 flex items-center justify-center opacity-5">
+          <img
+            src="/images/logo.png"
+            alt=""
+            className="max-h-full max-w-full object-contain"
+            aria-hidden="true"
+          />
+        </div>
+        <Line
+          ref={chartRef}
+          data={{
+            labels,
+            datasets,
+          }}
+          options={options}
+        />
+      </div>
       {note && (
         <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
           <span className="font-medium text-slate-700">Note: </span>

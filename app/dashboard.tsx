@@ -7,29 +7,39 @@ import type { Chart as ChartJS } from "chart.js";
 import { NoteEditor } from "../components/NoteEditor";
 import { DashboardChart } from "../components/DashboardChart";
 import {
-  FRED_SERIES_OPTIONS,
+  AGE_BANDS,
+  LABOR_METRICS,
+  type AgeBandId,
   type FredSeriesId,
   type FredSeriesResponse,
+  type LaborMetricId,
+  findLaborSeriesConfig,
 } from "../lib/fred";
 
 type ChartInstance = ChartJS<"line", number[], unknown> | null;
 
+type SeriesSelection = {
+  metric: LaborMetricId;
+  ageBand: AgeBandId;
+};
+
 type SelectionState = {
-  series1: FredSeriesId | "";
-  series2: FredSeriesId | "";
-  series3: FredSeriesId | "";
+  seriesA: SeriesSelection;
+  seriesB: SeriesSelection;
 };
 
 const DEFAULT_SELECTION: SelectionState = {
-  series1: "GDP",
-  series2: "UNRATE",
-  series3: "",
+  seriesA: { metric: "unemployment", ageBand: "all" },
+  seriesB: { metric: "participation", ageBand: "all" },
 };
 
 function selectionKey(selection: SelectionState): string {
-  return ["series1", "series2", "series3"]
-    .map((key) => (selection as Record<string, string>)[key] || "none")
-    .join("|");
+  return [
+    selection.seriesA.metric,
+    selection.seriesA.ageBand,
+    selection.seriesB.metric,
+    selection.seriesB.ageBand,
+  ].join("|");
 }
 
 export default function Dashboard() {
@@ -38,16 +48,30 @@ export default function Dashboard() {
   const [data, setData] = useState<FredSeriesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dualAxisEnabled, setDualAxisEnabled] = useState(false);
 
   const chartRef = useRef<ChartInstance>(null);
 
-  const activeSeries = useMemo(
-    () =>
-      [selection.series1, selection.series2, selection.series3].filter(
-        (id): id is FredSeriesId => Boolean(id),
-      ),
-    [selection],
-  );
+  const activeSeries = useMemo(() => {
+    const ids: FredSeriesId[] = [];
+    const aConfig = findLaborSeriesConfig(
+      selection.seriesA.metric,
+      selection.seriesA.ageBand,
+    );
+    const bConfig = findLaborSeriesConfig(
+      selection.seriesB.metric,
+      selection.seriesB.ageBand,
+    );
+
+    if (aConfig) {
+      ids.push(aConfig.id);
+    }
+    if (bConfig && (!aConfig || bConfig.id !== aConfig.id)) {
+      ids.push(bConfig.id);
+    }
+
+    return ids;
+  }, [selection]);
 
   const currentKey = useMemo(
     () => selectionKey(selection),
@@ -131,13 +155,17 @@ export default function Dashboard() {
     loadNoteForSelection(currentKey);
   }, [currentKey, loadNoteForSelection]);
 
-  const handleSelectionChange = (
+  const handleSeriesSelectionChange = (
     key: keyof SelectionState,
+    part: "metric" | "ageBand",
     value: string,
   ) => {
     setSelection((prev) => ({
       ...prev,
-      [key]: (value || "") as FredSeriesId | "",
+      [key]: {
+        ...prev[key],
+        [part]: value,
+      },
     }));
   };
 
@@ -158,29 +186,33 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.5fr)]">
         <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-800">
-            Series selection
+            Labor-market series selection
           </h2>
           <p className="text-xs text-slate-500">
-            Choose up to three FRED series to compare. Data is fetched
-            directly from the FRED API.
+            Choose two labor-market series (metric and age band) to compare.
+            Data is fetched directly from the FRED API.
           </p>
 
           <div className="flex flex-col gap-3">
-            <SeriesSelectRow
-              label="Series 1"
-              value={selection.series1}
-              onChange={(value) => handleSelectionChange("series1", value)}
+            <SeriesSelectionRow
+              label="Series A"
+              selection={selection.seriesA}
+              onChangeMetric={(value) =>
+                handleSeriesSelectionChange("seriesA", "metric", value)
+              }
+              onChangeAgeBand={(value) =>
+                handleSeriesSelectionChange("seriesA", "ageBand", value)
+              }
             />
-            <SeriesSelectRow
-              label="Series 2"
-              value={selection.series2}
-              onChange={(value) => handleSelectionChange("series2", value)}
-            />
-            <SeriesSelectRow
-              label="Series 3"
-              value={selection.series3}
-              onChange={(value) => handleSelectionChange("series3", value)}
-              optional
+            <SeriesSelectionRow
+              label="Series B"
+              selection={selection.seriesB}
+              onChangeMetric={(value) =>
+                handleSeriesSelectionChange("seriesB", "metric", value)
+              }
+              onChangeAgeBand={(value) =>
+                handleSeriesSelectionChange("seriesB", "ageBand", value)
+              }
             />
           </div>
 
@@ -203,6 +235,15 @@ export default function Dashboard() {
                 Shaded regions indicate NBER recession periods.
               </p>
             </div>
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                checked={dualAxisEnabled}
+                onChange={(event) => setDualAxisEnabled(event.target.checked)}
+              />
+              <span>Dual y-axes</span>
+            </label>
             <button
               type="button"
               onClick={handleExportPng}
@@ -231,6 +272,7 @@ export default function Dashboard() {
                 data={data}
                 note={note}
                 selectedSeries={activeSeries}
+                dualAxisEnabled={dualAxisEnabled}
                 onChartReady={(chart) => {
                   chartRef.current = chart;
                 }}
@@ -243,45 +285,73 @@ export default function Dashboard() {
   );
 }
 
-type SeriesSelectRowProps = {
+type SeriesSelectionRowProps = {
   label: string;
-  value: FredSeriesId | "";
-  onChange: (value: string) => void;
-  optional?: boolean;
+  selection: SeriesSelection;
+  onChangeMetric: (value: LaborMetricId) => void;
+  onChangeAgeBand: (value: AgeBandId) => void;
 };
 
-function SeriesSelectRow({
+function SeriesSelectionRow({
   label,
-  value,
-  onChange,
-  optional,
-}: SeriesSelectRowProps) {
+  selection,
+  onChangeMetric,
+  onChangeAgeBand,
+}: SeriesSelectionRowProps) {
+  const earningsAllOnly =
+    selection.metric === "earnings" && selection.ageBand !== "all";
+
   return (
-    <label className="flex flex-col gap-1 text-xs text-slate-700">
+    <div className="flex flex-col gap-1.5 text-xs text-slate-700">
       <span className="flex items-center gap-1.5">
         <span>{label}</span>
-        {optional && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-            Optional
-          </span>
-        )}
       </span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
-      >
-        <option value="">
-          {optional ? "None" : "Choose a series"}
-        </option>
-        {FRED_SERIES_OPTIONS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.id} — {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-slate-500">Metric</span>
+          <select
+            value={selection.metric}
+            onChange={(event) =>
+              onChangeMetric(event.target.value as LaborMetricId)
+            }
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+          >
+            {LABOR_METRICS.map((metric) => (
+              <option key={metric.id} value={metric.id}>
+                {metric.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-slate-500">Age band</span>
+          <select
+            value={selection.ageBand}
+            onChange={(event) =>
+              onChangeAgeBand(event.target.value as AgeBandId)
+            }
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+          >
+            {AGE_BANDS.map((band) => {
+              const disabled =
+                selection.metric === "earnings" && band.id !== "all";
+              return (
+                <option key={band.id} value={band.id} disabled={disabled}>
+                  {band.label}
+                  {disabled ? " (n/a for earnings)" : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      </div>
+      {earningsAllOnly && (
+        <p className="text-[10px] text-slate-400">
+          Median weekly earnings are only available for all workers in this
+          demo.
+        </p>
+      )}
+    </div>
   );
 }
-
 

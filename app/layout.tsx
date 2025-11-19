@@ -44,10 +44,7 @@ export default function RootLayout({
                 </div>
                 <div className="flex flex-col">
                   <span className="text-sm font-semibold tracking-tight text-slate-900">
-                    FRED Series Dashboard
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Compare up to three series with NBER recessions.
+                    TLG Macro Dashboard
                   </span>
                 </div>
               </div>
