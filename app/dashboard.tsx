@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChartJSOrUndefined } from "react-chartjs-2/dist/types";
+import type { ChartJSOrUndefined } from "react-chartjs-2";
 
 import { NoteEditor } from "../components/NoteEditor";
 import { DashboardChart } from "../components/DashboardChart";
