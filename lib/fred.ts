@@ -2,7 +2,8 @@ export type LaborMetricId =
   | "unemployment"
   | "participation"
   | "earnings"
-  | "cpi";
+  | "cpi"
+  | "real_gdp";
 
 export type AgeBandId =
   | "all"
@@ -15,19 +16,21 @@ export type FredSeriesId =
   // Unemployment rate
   | "UNRATE" // Unemployment Rate: 16 years and over
   | "LNS14000012" // Unemployment Rate: 16 to 19 years
-  | "LNS14000016" // Unemployment Rate: 20 to 24 years
+  | "LNS14000036" // Unemployment Rate: 20 to 24 years
   | "LNS14000089" // Unemployment Rate: 25 to 54 years
   | "LNS14000097" // Unemployment Rate: 55 years and over
   // Labor force participation
   | "CIVPART" // Labor Force Participation Rate: 16 years and over
   | "LNS11300012" // Labor Force Participation Rate: 16 to 19 years
-  | "LNS11300016" // Labor Force Participation Rate: 20 to 24 years
+  | "LNS11300036" // Labor Force Participation Rate: 20 to 24 years
   | "LNS11300060" // Labor Force Participation Rate: 25 to 54 years
   | "LNS11300097" // Labor Force Participation Rate: 55 years and over
   // Median usual weekly earnings (all workers)
   | "LEU0252881600A"
   // Consumer Price Index (all urban consumers, all items)
-  | "CPIAUCSL";
+  | "CPIAUCSL"
+  // Real Gross Domestic Product (chained 2017 dollars, annual rate)
+  | "A191RL1Q225SBEA";
 
 export type LaborSeriesConfig = {
   id: FredSeriesId;
@@ -50,7 +53,7 @@ export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
     label: "Unemployment rate, 16 to 19 year-olds",
   },
   {
-    id: "LNS14000016",
+    id: "LNS14000036",
     metric: "unemployment",
     ageBand: "age_20_24",
     label: "Unemployment rate, 20 to 24 year-olds",
@@ -80,7 +83,7 @@ export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
     label: "Labor force participation rate, 16 to 19 year-olds",
   },
   {
-    id: "LNS11300016",
+    id: "LNS11300036",
     metric: "participation",
     ageBand: "age_20_24",
     label: "Labor force participation rate, 20 to 24 year-olds",
@@ -109,7 +112,14 @@ export const LABOR_SERIES_CONFIG: LaborSeriesConfig[] = [
     metric: "cpi",
     ageBand: "all",
     label:
-      "Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (CPI-U)",
+      "CPI, annualized monthly % change (CPI-U, all items, U.S. city average)",
+  },
+  {
+    id: "A191RL1Q225SBEA",
+    metric: "real_gdp",
+    ageBand: "all",
+    label:
+      "Real Gross Domestic Product, chained 2017 dollars (annual rate, quarterly)",
   },
 ];
 
@@ -128,7 +138,11 @@ export const LABOR_METRICS: { id: LaborMetricId; label: string }[] = [
   },
   {
     id: "cpi",
-    label: "Consumer Price Index (CPI-U)",
+    label: "CPI, annualized monthly % change",
+  },
+  {
+    id: "real_gdp",
+    label: "Real GDP (chained 2017 dollars, annual rate)",
   },
 ];
 
@@ -211,6 +225,40 @@ type FredApiSeriesResponse = {
 
 const FRED_API_BASE = "https://api.stlouisfed.org/fred";
 
+function toAnnualizedMonthlyChange(
+  observations: FredObservation[],
+): FredObservation[] {
+  let lastValue: number | null = null;
+
+  return observations.map((obs) => {
+    const current = obs.value;
+
+    if (current == null) {
+      return { ...obs, value: null };
+    }
+
+    if (lastValue == null) {
+      lastValue = current;
+      return { ...obs, value: null };
+    }
+
+    const ratio = current / lastValue;
+
+    if (!Number.isFinite(ratio) || ratio <= 0) {
+      lastValue = current;
+      return { ...obs, value: null };
+    }
+
+    const annualized = (ratio ** 12 - 1) * 100;
+    lastValue = current;
+
+    return {
+      ...obs,
+      value: Number.isFinite(annualized) ? annualized : null,
+    };
+  });
+}
+
 export async function fetchFredSeries(
   seriesId: FredSeriesId,
 ): Promise<FredSeriesNormalized> {
@@ -242,7 +290,7 @@ export async function fetchFredSeries(
 
   const json = (await res.json()) as FredApiSeriesResponse;
 
-  const observations: FredObservation[] = json.observations.map((obs) => {
+  const rawObservations: FredObservation[] = json.observations.map((obs) => {
     const trimmed = obs.value.trim();
     if (trimmed === "." || trimmed === "") {
       return { date: obs.date, value: null };
@@ -254,12 +302,19 @@ export async function fetchFredSeries(
     };
   });
 
+  const isCpi = seriesId === "CPIAUCSL";
+  const observations = isCpi
+    ? toAnnualizedMonthlyChange(rawObservations)
+    : rawObservations;
+
   return {
     id: seriesId,
     title:
       LABOR_SERIES_CONFIG.find((option) => option.id === seriesId)?.label ??
       seriesId,
-    units: json.units ?? null,
+    units: isCpi
+      ? "Percent, annualized monthly change"
+      : json.units ?? null,
     frequency: json.observation_end ? null : null,
     observations,
   };

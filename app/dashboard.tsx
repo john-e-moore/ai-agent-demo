@@ -446,7 +446,7 @@ function SeriesSelectionRow({
         <p className="text-[10px] text-slate-400">
           {selection.metric === "earnings"
             ? "Median weekly earnings are only available for all workers in this demo."
-            : "CPI is only available as an aggregate index in this demo (no age breakdowns)."}
+            : "This series is only available as an aggregate index in this demo (no age breakdowns)."}
         </p>
       )}
     </div>

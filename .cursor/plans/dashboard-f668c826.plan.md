@@ -1,72 +1,61 @@
 <!-- f668c826-dc29-4ac1-acd7-97818983425c d08d974d-98ff-42bd-ac5a-26830adae3d2 -->
-# FRED Dashboard: Age Bands, CPI, Branding, and Date Filters
+## CPI change, age-band fixes, GDP, and logo prominence
 
-## Goals
+### Goals
 
-- Surface **all relevant age subgroups** for labor-market series instead of only 16–19 year-olds.
-- Add **CPI** as an additional metric choice alongside unemployment, participation, and earnings.
-- Remove the **chart watermark** to keep the plot area clean.
-- Make the **header logo more prominent** and remove its rounded/gray treatment.
-- Add **min/max date filters** so users can restrict the charted time window.
+- Use **monthly annualized CPI changes** instead of the CPI level in the chart.
+- Fix **400 errors** for specific age bands (20–24 and 55+) by correcting or disabling invalid FRED series.
+- Add **real GDP (A191RL1Q225SBEA)** as a selectable series.
+- Make the **header logo more prominent and legible**.
 
-## Data model and config updates
+### Data and transformation changes
 
-- **Extend age-band coverage** in `lib/fred.ts`:
-- Add new `AgeBandId` values (e.g., 20–24, 25–54, 55+ or whatever final set you want) and corresponding entries in `AGE_BANDS` with clear labels.
-- For each new age band, add matching `LABOR_SERIES_CONFIG` entries for unemployment and participation using the appropriate FRED series IDs, keeping `earnings` as `ageBand: "all"` only.
-- Ensure `FredSeriesId` union is updated to include all new labor series and remains the single source of truth for valid IDs.
-- **Introduce CPI metric** in `lib/fred.ts`:
-- Add a new `LaborMetricId` value (e.g. `"cpi"`) and extend `LABOR_METRICS` with a human-readable label like "Consumer Price Index (CPI-U)".
-- Add at least one CPI series (e.g., `CPIAUCSL`) to `FredSeriesId` and `LABOR_SERIES_CONFIG` with a clear label indicating coverage and units.
-- Decide that CPI, like earnings, uses the `"all"` age band only and enforce this via config (no age-specific CPI options in `LABOR_SERIES_CONFIG`).
+- **Switch CPI metric to annualized monthly change** in `lib/fred.ts` and downstream consumers:
+- Keep `CPIAUCSL` as the underlying series, but document that the `cpi` metric represents the annualized month-over-month percentage change.
+- Implement a small helper (e.g., `toAnnualizedMonthlyChange(observations)`) that, for each month \(t\), computes a rate based on \( CPI_t \) and \( CPI_{t-1} \) (e.g., \(((CPI_t / CPI_{t-1})^{12} - 1) * 100\)), returning a new observation array with `null` for the first point.
+- Integrate this helper in `fetchFredSeries` only when `seriesId === "CPIAUCSL"` (or when `metric === "cpi"` if you prefer a config-driven approach), so all CPI values passed into `FredSeriesResponse` are already transformed.
 
-## Dashboard UI and state updates
+- **Fix invalid age-band series IDs causing 400s**:
+- Cross-check the FRED series IDs used for 20–24 and 55+ unemployment/participation in `FredSeriesId` and `LABOR_SERIES_CONFIG` in `lib/fred.ts` against FRED docs.
+- Replace any incorrect IDs (e.g., if `LNS14000016` or other codes are wrong) with valid ones; if a particular age band truly lacks data for a metric, remove that `LABOR_SERIES_CONFIG` entry and let the UI simply not offer that combination.
+- After adjusting, run a quick manual test for each age band option in the UI to confirm successful responses and that no 400 errors surface in the chart panel.
 
-- **Series selection behavior** in `app/dashboard.tsx`:
-- Reuse the expanded `AGE_BANDS` list so each series row can pick from the full set of age subgroups for metrics that support them.
-- Generalize the existing `earningsAllOnly` logic to something like `metricSupportsAgeBands(metric)` so both `earnings` and `cpi` force `ageBand: "all"` and show an explanatory helper text.
-- Confirm that `DEFAULT_SELECTION` remains sensible (e.g., unemployment/participation for `"all"` workers) and optionally add a preset where one of the series is CPI.
+- **Add real GDP series**:
+- Extend `FredSeriesId` with `"A191RL1Q225SBEA"` and add a new `LaborMetricId` (e.g., `"gdp"`) or repurpose a more general metric name like `"real_gdp"`.
+- Add a `LABOR_SERIES_CONFIG` entry for this GDP series with `ageBand: "all"` and a clear label (e.g., "Real GDP, chained 2017 dollars (annual rate)") and no age breakdown.
+- Append a corresponding entry to `LABOR_METRICS` so it appears in the metric dropdown; treat it similarly to CPI/earnings as an all-workers aggregate.
 
-## Chart behavior and watermark removal
+### UI and behavior updates
 
-- **Remove the watermark** in `components/DashboardChart.tsx`:
-- Delete the absolutely positioned overlay `div` with the logo `img` so the chart area is clean, leaving the NBER recession shading plugin as-is.
-- **Prepare for date filtering**:
-- Add optional `minDate` / `maxDate` props to `DashboardChart` and use them to derive filtered `labels` and dataset `values` (only include dates within the selected range).
-- Ensure tooltip, legend, and recession shading continue to work correctly when labels are subsetted.
+- **Metric support for age bands** (already partially generalized):
+- Update the existing `metricSupportsAgeBands` helper in `app/dashboard.tsx` to treat the new GDP metric the same way as CPI and earnings (i.e., no age breakdown, force `all`).
+- Verify that the explanatory helper text beneath the selectors correctly handles both CPI and GDP (e.g., neutral wording like "This series is only available as an aggregate index in this demo (no age breakdowns)").
 
-## Date-range filter UI and wiring
+- **Chart display for CPI and GDP**:
+- Confirm that the transformed CPI change series is clearly labeled in the legend (e.g., "CPI, annualized monthly % change"), either via `LABOR_SERIES_CONFIG` label text or direct use of the FRED metadata.
+- Ensure that both CPI and GDP continue to work with dual y-axes and respect the existing date-range filter (the transformation should occur before bundling; the date filter just slices the transformed data).
 
-- **State and derivation in `app/dashboard.tsx`**:
-- After data is loaded, compute the overall available min/max date from `data.dates` and store them in state.
-- Add controlled state for `selectedMinDate` and `selectedMaxDate`, defaulting to the full available range.
-- **User-facing controls**:
-- In the chart panel header (near "Chart" / dual-axis toggle / Download button), add two `input type="date"` controls labeled "From" and "To".
-- Bind their `min`/`max` attributes to the overall data range and ensure invalid selections (min after max, or vice versa) are either clamped or prevented with simple validation.
-- **Plumbing into the chart**:
-- Pass the current `selectedMinDate` / `selectedMaxDate` from `Dashboard` into `DashboardChart` via new props.
-- In `DashboardChart`, slice `data.dates` and each series `values` array according to the selected range before constructing `labels` and `datasets`.
+### Header logo prominence
 
-## Header/logo styling refinements
+- **Increase logo size and readability in `app/layout.tsx`**:
+- Enlarge the logo container (e.g., `h-12 w-12` or larger) and consider setting an explicit `sizes` value matching the new size to avoid blurry rendering.
+- Optionally give the logo a bit more horizontal space from the title (increasing the gap or adjusting flex alignment) so the image can visually dominate.
+- Verify on a standard laptop viewport that the logo text is clearly legible without zooming and that the header still looks balanced at mobile breakpoints.
 
-- **Update layout header in `app/layout.tsx`**:
-- Increase the logo container footprint (e.g., bump height/width, adjust padding) and remove the gray `bg-slate-100`, border ring, and rounded corners so the logo stands out more naturally.
-- Optionally place the logo and title on a slightly larger flex row or adjust typography (`text-base`/`text-lg` weight) to emphasize branding without disrupting the rest of the layout.
-
-## Validation and polish
+### Verification
 
 - **Functional checks**:
-- Verify that all combinations of metric + age band that exist in `LABOR_SERIES_CONFIG` successfully fetch data and render (no missing-series errors).
-- Confirm that CPI can be selected in either series slot, works with dual y-axes, and that the units difference versus labor metrics is visually manageable.
-- Exercise the date filter across several ranges (early history, Great Recession, COVID, recent years) to ensure the chart updates smoothly and recession shading aligns.
-- **UX passes**:
-- Ensure the new age-band dropdown remains readable and scannable even with the expanded list.
-- Check that the header logo treatment matches your desired visual weight and that removing the chart watermark improves clarity without making the chart feel empty.
+- Manually step through each metric (unemployment, participation, earnings, CPI change, GDP) and ensure that all allowed age-band combinations load without FRED errors.
+- Compare CPI annualized monthly changes for a few dates against an external calculator (spot check only) to validate the transformation.
+- Check that GDP, being quarterly, still renders sensibly on the monthly x-axis alongside monthly series and responds to the date filter without crashes.
+- **Visual/UX checks**:
+- Confirm that CPI’s new units (percentage change) are intuitive from the legend and tooltip text.
+- Ensure the header logo is now visually prominent and that the rest of the layout still feels cohesive.
 
 ### To-dos
 
-- [ ] Expand AgeBandId, AGE_BANDS, FredSeriesId, and LABOR_SERIES_CONFIG in lib/fred.ts to cover all desired age subgroups for unemployment and participation.
-- [ ] Introduce a CPI metric and series in lib/fred.ts, wiring it into LABOR_METRICS and LABOR_SERIES_CONFIG and constraining it to the all-workers age band.
-- [ ] Adjust app/dashboard.tsx series selection logic and helper text so metrics that do not support age bands (earnings, CPI) force the all-workers band while others use the full age-band list.
-- [ ] Add min/max date state and date-input controls in app/dashboard.tsx and plumb selected range into DashboardChart so labels and values are sliced accordingly.
-- [ ] Remove the chart watermark overlay in DashboardChart.tsx and adjust header logo styling in layout.tsx to be larger and without rounded/gray background.
+- [x] Transform CPI series to monthly annualized percentage change in lib/fred.ts and update labels to reflect change rather than level.
+- [x] Validate and correct or remove FRED series IDs for 20–24 and 55+ unemployment/participation age bands in lib/fred.ts to eliminate 400 errors.
+- [x] Add real GDP (A191RL1Q225SBEA) as a metric/series in lib/fred.ts and wire it into LABOR_METRICS and LABOR_SERIES_CONFIG as an all-workers aggregate.
+- [x] Adjust dashboard metric/age-band UI and labels to account for CPI change and GDP as aggregate-only metrics and ensure chart display (legend, tooltips, date filter) remains clear.
+- [x] Further increase the header logo size/readability in app/layout.tsx while keeping the header layout balanced across breakpoints.
