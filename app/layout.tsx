@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "FRED Dashboard",
-  description: "Interactive FRED time-series dashboard with notes and PNG export.",
+  description: "Interactive FRED time-series dashboard with PNG export.",
 };
 
 export default function RootLayout({

@@ -1,10 +1,9 @@
-/* Client-side dashboard shell: manages series selection, data state, note, and export wiring. */
+/* Client-side dashboard shell: manages series selection, data state, and export wiring. */
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Chart as ChartJS } from "chart.js";
-import { NoteEditor } from "../components/NoteEditor";
 import { DashboardChart } from "../components/DashboardChart";
 import {
   AGE_BANDS,
@@ -37,18 +36,8 @@ function metricSupportsAgeBands(metric: LaborMetricId): boolean {
   return metric === "unemployment" || metric === "participation";
 }
 
-function selectionKey(selection: SelectionState): string {
-  return [
-    selection.seriesA.metric,
-    selection.seriesA.ageBand,
-    selection.seriesB.metric,
-    selection.seriesB.ageBand,
-  ].join("|");
-}
-
 export default function Dashboard() {
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
-  const [note, setNote] = useState("");
   const [data, setData] = useState<FredSeriesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,39 +69,6 @@ export default function Dashboard() {
 
     return ids;
   }, [selection]);
-
-  const currentKey = useMemo(
-    () => selectionKey(selection),
-    [selection],
-  );
-
-  const loadNoteForSelection = useCallback((key: string) => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(
-        `fred-dashboard-note:${key}`,
-      );
-      setNote(stored ?? "");
-    } catch {
-      setNote("");
-    }
-  }, []);
-
-  const handleSaveNote = useCallback(
-    (value: string) => {
-      setNote(value);
-      if (typeof window === "undefined") return;
-      try {
-        window.localStorage.setItem(
-          `fred-dashboard-note:${currentKey}`,
-          value,
-        );
-      } catch {
-        // ignore storage failures (e.g. private mode)
-      }
-    },
-    [currentKey],
-  );
 
   const fetchData = useCallback(
     async (seriesIds: FredSeriesId[]) => {
@@ -158,10 +114,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchData(activeSeries);
   }, [activeSeries, fetchData]);
-
-  useEffect(() => {
-    loadNoteForSelection(currentKey);
-  }, [currentKey, loadNoteForSelection]);
 
   useEffect(() => {
     if (!data || data.dates.length === 0) {
@@ -283,14 +235,6 @@ export default function Dashboard() {
               }
             />
           </div>
-
-          <div className="pt-2">
-            <NoteEditor
-              note={note}
-              onNoteChange={setNote}
-              onSave={handleSaveNote}
-            />
-          </div>
         </div>
 
         <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -366,7 +310,6 @@ export default function Dashboard() {
             {!error && (
               <DashboardChart
                 data={data}
-                note={note}
                 selectedSeries={activeSeries}
                 dualAxisEnabled={dualAxisEnabled}
                 minDate={selectedMinDate || undefined}

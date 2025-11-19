@@ -30,7 +30,6 @@ type ChartInstance = ChartJS<"line", number[], unknown> | null;
 
 type DashboardChartProps = {
   data: FredSeriesResponse | null;
-  note: string;
   selectedSeries: FredSeriesId[];
   dualAxisEnabled: boolean;
   onChartReady?: (chart: ChartInstance) => void;
@@ -116,7 +115,6 @@ const SERIES_COLORS = [
 
 export function DashboardChart({
   data,
-  note,
   selectedSeries,
   dualAxisEnabled,
   onChartReady,
@@ -244,11 +242,6 @@ export function DashboardChart({
       <div className="flex h-64 w-full items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
         <div className="flex max-w-xs flex-col items-center gap-1 text-center">
           <span>{labelText}</span>
-          {note && (
-            <span className="text-[10px] text-slate-400">
-              (A note is already saved and will appear alongside the chart.)
-            </span>
-          )}
         </div>
       </div>
     );
@@ -266,12 +259,6 @@ export function DashboardChart({
           options={options}
         />
       </div>
-      {note && (
-        <div className="mt-1 rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600">
-          <span className="font-medium text-slate-700">Note: </span>
-          {note}
-        </div>
-      )}
     </div>
   );
 }
