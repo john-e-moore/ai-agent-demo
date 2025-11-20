@@ -9,8 +9,7 @@ export default function Home() {
           Interactive FRED series dashboard
         </h1>
         <p className="max-w-3xl text-sm text-slate-600">
-          Select up to two FRED series, view them over time with shaded NBER
-          recessions, and export the current chart as a PNG.
+          Select up to two FRED series and view them over time. Optionally, download the chart or its underlying data.
         </p>
       </div>
       <Suspense

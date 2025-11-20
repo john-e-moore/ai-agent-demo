@@ -598,7 +598,7 @@ export default function Dashboard() {
                 className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
                 disabled={!hasData}
               >
-                Download PNG
+                Download chart
               </button>
               <button
                 type="button"
