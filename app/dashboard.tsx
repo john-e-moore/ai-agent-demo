@@ -6,20 +6,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Chart as ChartJS } from "chart.js";
 import { DashboardChart } from "../components/DashboardChart";
 import {
-  AGE_BANDS,
-  LABOR_METRICS,
-  type AgeBandId,
+  type FredCategory,
   type FredSeriesId,
+  type FredSeriesMeta,
   type FredSeriesResponse,
-  type LaborMetricId,
-  findLaborSeriesConfig,
 } from "../lib/fred";
 
 type ChartInstance = ChartJS<"line", number[], unknown> | null;
 
 type SeriesSelection = {
-  metric: LaborMetricId;
-  ageBand: AgeBandId;
+  categoryId: number | null;
+  subcategoryId: number | null;
+  seriesId: FredSeriesId | null;
 };
 
 type SelectionState = {
@@ -28,47 +26,272 @@ type SelectionState = {
 };
 
 const DEFAULT_SELECTION: SelectionState = {
-  seriesA: { metric: "unemployment", ageBand: "all" },
-  seriesB: { metric: "participation", ageBand: "all" },
+  seriesA: { categoryId: null, subcategoryId: null, seriesId: null },
+  seriesB: { categoryId: null, subcategoryId: null, seriesId: null },
 };
-
-function metricSupportsAgeBands(metric: LaborMetricId): boolean {
-  return metric === "unemployment" || metric === "participation";
-}
 
 export default function Dashboard() {
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
   const [data, setData] = useState<FredSeriesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
   const [dualAxisEnabled, setDualAxisEnabled] = useState(false);
   const [availableMinDate, setAvailableMinDate] = useState<string | null>(null);
   const [availableMaxDate, setAvailableMaxDate] = useState<string | null>(null);
   const [selectedMinDate, setSelectedMinDate] = useState<string>("");
   const [selectedMaxDate, setSelectedMaxDate] = useState<string>("");
 
+  const [rootCategories, setRootCategories] = useState<FredCategory[]>([]);
+  const [childrenByParent, setChildrenByParent] = useState<
+    Record<number, FredCategory[]>
+  >({});
+  const [seriesByCategory, setSeriesByCategory] = useState<
+    Record<number, FredSeriesMeta[]>
+  >({});
+  const [loadingRootCategories, setLoadingRootCategories] = useState(false);
+  const [loadingChildren, setLoadingChildren] = useState<
+    Record<number, boolean>
+  >({});
+  const [loadingSeries, setLoadingSeries] = useState<Record<number, boolean>>(
+    {},
+  );
+
   const chartRef = useRef<ChartInstance>(null);
+
+  // --- FRED metadata helpers ---
+
+  const loadRootCategories = useCallback(async () => {
+    if (rootCategories.length > 0 || loadingRootCategories) {
+      return;
+    }
+
+    setLoadingRootCategories(true);
+    setMetaError(null);
+
+    try {
+      const response = await fetch("/api/fred/meta", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ kind: "children", categoryId: 0 }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const message =
+          typeof body?.error === "string"
+            ? body.error
+            : "Failed to load FRED categories.";
+        throw new Error(message);
+      }
+
+      const json = (await response.json()) as {
+        kind: "children";
+        categories: FredCategory[];
+      };
+
+      setRootCategories(json.categories ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unexpected error loading FRED categories.";
+      setMetaError(message);
+    } finally {
+      setLoadingRootCategories(false);
+    }
+  }, [loadingRootCategories, rootCategories.length]);
+
+  const ensureChildrenLoaded = useCallback(
+    async (parentCategoryId: number) => {
+      if (childrenByParent[parentCategoryId]) {
+        return;
+      }
+
+      setLoadingChildren((prev) => ({
+        ...prev,
+        [parentCategoryId]: true,
+      }));
+      setMetaError(null);
+
+      try {
+        const response = await fetch("/api/fred/meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ kind: "children", categoryId: parentCategoryId }),
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const message =
+            typeof body?.error === "string"
+              ? body.error
+              : "Failed to load FRED subcategories.";
+          throw new Error(message);
+        }
+
+        const json = (await response.json()) as {
+          kind: "children";
+          categories: FredCategory[];
+        };
+
+        setChildrenByParent((prev) => ({
+          ...prev,
+          [parentCategoryId]: json.categories ?? [],
+        }));
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Unexpected error loading FRED subcategories.";
+        setMetaError(message);
+      } finally {
+        setLoadingChildren((prev) => ({
+          ...prev,
+          [parentCategoryId]: false,
+        }));
+      }
+    },
+    [childrenByParent],
+  );
+
+  const ensureSeriesLoaded = useCallback(
+    async (categoryId: number) => {
+      if (seriesByCategory[categoryId]) {
+        return;
+      }
+
+      setLoadingSeries((prev) => ({
+        ...prev,
+        [categoryId]: true,
+      }));
+      setMetaError(null);
+
+      try {
+        const response = await fetch("/api/fred/meta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ kind: "series", categoryId }),
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const message =
+            typeof body?.error === "string"
+              ? body.error
+              : "Failed to load FRED series.";
+          throw new Error(message);
+        }
+
+        const json = (await response.json()) as {
+          kind: "series";
+          series: FredSeriesMeta[];
+        };
+
+        setSeriesByCategory((prev) => ({
+          ...prev,
+          [categoryId]: json.series ?? [],
+        }));
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Unexpected error loading FRED series.";
+        setMetaError(message);
+      } finally {
+        setLoadingSeries((prev) => ({
+          ...prev,
+          [categoryId]: false,
+        }));
+      }
+    },
+    [seriesByCategory],
+  );
+
+  useEffect(() => {
+    void loadRootCategories();
+  }, [loadRootCategories]);
 
   const activeSeries = useMemo(() => {
     const ids: FredSeriesId[] = [];
-    const aConfig = findLaborSeriesConfig(
-      selection.seriesA.metric,
-      selection.seriesA.ageBand,
-    );
-    const bConfig = findLaborSeriesConfig(
-      selection.seriesB.metric,
-      selection.seriesB.ageBand,
-    );
+    const aId = selection.seriesA.seriesId;
+    const bId = selection.seriesB.seriesId;
 
-    if (aConfig) {
-      ids.push(aConfig.id);
+    // Series A is required; if it's not selected yet, treat as no active series.
+    if (!aId) {
+      return ids;
     }
-    if (bConfig && (!aConfig || bConfig.id !== aConfig.id)) {
-      ids.push(bConfig.id);
+
+    ids.push(aId);
+
+    if (bId && bId !== aId) {
+      ids.push(bId);
     }
 
     return ids;
   }, [selection]);
+
+  const handleCategoryChange = (key: keyof SelectionState, value: string) => {
+    setSelection((prev) => {
+      const next: SelectionState = {
+        ...prev,
+        [key]: {
+          categoryId: value ? Number.parseInt(value, 10) : null,
+          subcategoryId: null,
+          seriesId: null,
+        },
+      };
+      return next;
+    });
+
+    if (value) {
+      const categoryId = Number.parseInt(value, 10);
+      void ensureChildrenLoaded(categoryId);
+      void ensureSeriesLoaded(categoryId);
+    }
+  };
+
+  const handleSubcategoryChange = (
+    key: keyof SelectionState,
+    value: string,
+  ) => {
+    setSelection((prev) => {
+      const current = prev[key];
+      const nextSubcategoryId = value ? Number.parseInt(value, 10) : null;
+      const next: SelectionState = {
+        ...prev,
+        [key]: {
+          ...current,
+          subcategoryId: nextSubcategoryId,
+          seriesId: null,
+        },
+      };
+      return next;
+    });
+
+    if (value) {
+      const subcategoryId = Number.parseInt(value, 10);
+      void ensureSeriesLoaded(subcategoryId);
+    }
+  };
+
+  const handleSeriesChange = (key: keyof SelectionState, value: string) => {
+    setSelection((prev) => {
+      const current = prev[key];
+      const next: SelectionState = {
+        ...prev,
+        [key]: {
+          ...current,
+          seriesId: value || null,
+        },
+      };
+      return next;
+    });
+  };
 
   const fetchData = useCallback(
     async (seriesIds: FredSeriesId[]) => {
@@ -138,37 +361,6 @@ export default function Dashboard() {
     );
   }, [data]);
 
-  const handleSeriesSelectionChange = (
-    key: keyof SelectionState,
-    part: "metric" | "ageBand",
-    value: string,
-  ) => {
-    setSelection((prev) => {
-      const next = { ...prev };
-
-      if (part === "metric") {
-        const metric = value as LaborMetricId;
-        const current = prev[key];
-        const nextAgeBand = metricSupportsAgeBands(metric)
-          ? current.ageBand
-          : ("all" as AgeBandId);
-
-        next[key] = {
-          ...current,
-          metric,
-          ageBand: nextAgeBand,
-        };
-      } else {
-        next[key] = {
-          ...prev[key],
-          ageBand: value as AgeBandId,
-        };
-      }
-
-      return next;
-    });
-  };
-
   const handleMinDateChange = (value: string) => {
     setSelectedMinDate(value);
     setSelectedMaxDate((prevMax) => {
@@ -203,36 +395,52 @@ export default function Dashboard() {
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1.5fr)]">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-800">
-            Labor-market series selection
+            FRED series selection
           </h2>
           <p className="text-xs text-slate-500">
-            Choose two labor-market series (metric and age band) to compare.
-            Data is fetched directly from the FRED API.
+            Choose up to two FRED series (category, subcategory, and series) to
+            compare. Data is fetched directly from the FRED API.
           </p>
 
           <div className="flex flex-col gap-3">
             <SeriesSelectionRow
               label="Series A"
               selection={selection.seriesA}
-              onChangeMetric={(value) =>
-                handleSeriesSelectionChange("seriesA", "metric", value)
+              rootCategories={rootCategories}
+              childrenByParent={childrenByParent}
+              seriesByCategory={seriesByCategory}
+              loadingRootCategories={loadingRootCategories}
+              loadingChildren={loadingChildren}
+              loadingSeries={loadingSeries}
+              metaError={metaError}
+              onChangeCategory={(value) =>
+                handleCategoryChange("seriesA", value)
               }
-              onChangeAgeBand={(value) =>
-                handleSeriesSelectionChange("seriesA", "ageBand", value)
+              onChangeSubcategory={(value) =>
+                handleSubcategoryChange("seriesA", value)
               }
+              onChangeSeries={(value) => handleSeriesChange("seriesA", value)}
             />
             <SeriesSelectionRow
-              label="Series B"
+              label="Series B (optional)"
               selection={selection.seriesB}
-              onChangeMetric={(value) =>
-                handleSeriesSelectionChange("seriesB", "metric", value)
+              rootCategories={rootCategories}
+              childrenByParent={childrenByParent}
+              seriesByCategory={seriesByCategory}
+              loadingRootCategories={loadingRootCategories}
+              loadingChildren={loadingChildren}
+              loadingSeries={loadingSeries}
+              metaError={metaError}
+              onChangeCategory={(value) =>
+                handleCategoryChange("seriesB", value)
               }
-              onChangeAgeBand={(value) =>
-                handleSeriesSelectionChange("seriesB", "ageBand", value)
+              onChangeSubcategory={(value) =>
+                handleSubcategoryChange("seriesB", value)
               }
+              onChangeSeries={(value) => handleSeriesChange("seriesB", value)}
             />
           </div>
         </div>
@@ -329,67 +537,125 @@ export default function Dashboard() {
 type SeriesSelectionRowProps = {
   label: string;
   selection: SeriesSelection;
-  onChangeMetric: (value: LaborMetricId) => void;
-  onChangeAgeBand: (value: AgeBandId) => void;
+  rootCategories: FredCategory[];
+  childrenByParent: Record<number, FredCategory[]>;
+  seriesByCategory: Record<number, FredSeriesMeta[]>;
+  loadingRootCategories: boolean;
+  loadingChildren: Record<number, boolean>;
+  loadingSeries: Record<number, boolean>;
+  metaError: string | null;
+  onChangeCategory: (value: string) => void;
+  onChangeSubcategory: (value: string) => void;
+  onChangeSeries: (value: string) => void;
 };
 
 function SeriesSelectionRow({
   label,
   selection,
-  onChangeMetric,
-  onChangeAgeBand,
+  rootCategories,
+  childrenByParent,
+  seriesByCategory,
+  loadingRootCategories,
+  loadingChildren,
+  loadingSeries,
+  metaError,
+  onChangeCategory,
+  onChangeSubcategory,
+  onChangeSeries,
 }: SeriesSelectionRowProps) {
-  const metricHasNoAgeBreakdown = !metricSupportsAgeBands(selection.metric);
+  const selectedCategoryId = selection.categoryId;
+  const selectedSubcategoryId = selection.subcategoryId;
+  const effectiveSeriesCategoryId =
+    selectedSubcategoryId ?? selectedCategoryId ?? null;
+
+  const subcategories =
+    selectedCategoryId != null ? childrenByParent[selectedCategoryId] ?? [] : [];
+
+  const seriesOptions =
+    effectiveSeriesCategoryId != null
+      ? seriesByCategory[effectiveSeriesCategoryId] ?? []
+      : [];
+
+  const isLoadingChildren =
+    selectedCategoryId != null ? Boolean(loadingChildren[selectedCategoryId]) : false;
+  const isLoadingSeries =
+    effectiveSeriesCategoryId != null
+      ? Boolean(loadingSeries[effectiveSeriesCategoryId])
+      : false;
 
   return (
     <div className="flex flex-col gap-1.5 text-xs text-slate-700">
       <span className="flex items-center gap-1.5">
         <span>{label}</span>
       </span>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-500">Metric</span>
+          <span className="text-[11px] text-slate-500">Category</span>
           <select
-            value={selection.metric}
-            onChange={(event) =>
-              onChangeMetric(event.target.value as LaborMetricId)
-            }
+            value={selectedCategoryId != null ? String(selectedCategoryId) : ""}
+            onChange={(event) => onChangeCategory(event.target.value)}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
           >
-            {LABOR_METRICS.map((metric) => (
-              <option key={metric.id} value={metric.id}>
-                {metric.label}
+            <option value="" disabled>
+              {loadingRootCategories ? "Loading categories…" : "Select a category"}
+            </option>
+            {rootCategories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
               </option>
             ))}
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-500">Age band</span>
+          <span className="text-[11px] text-slate-500">Subcategory</span>
           <select
-            value={selection.ageBand}
-            onChange={(event) =>
-              onChangeAgeBand(event.target.value as AgeBandId)
+            value={
+              selectedSubcategoryId != null ? String(selectedSubcategoryId) : ""
             }
+            onChange={(event) => onChangeSubcategory(event.target.value)}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            disabled={!selectedCategoryId || isLoadingChildren}
           >
-            {AGE_BANDS.map((band) => {
-              const disabled =
-                metricHasNoAgeBreakdown && band.id !== "all";
-              return (
-                <option key={band.id} value={band.id} disabled={disabled}>
-                  {band.label}
-                  {disabled ? " (all workers only)" : ""}
-                </option>
-              );
-            })}
+            <option value="">
+              {isLoadingChildren
+                ? "Loading subcategories…"
+                : subcategories.length
+                  ? "Select a subcategory (optional)"
+                  : "No subcategories"}
+            </option>
+            {subcategories.map((subcategory) => (
+              <option key={subcategory.id} value={subcategory.id}>
+                {subcategory.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] text-slate-500">Series</span>
+          <select
+            value={selection.seriesId ?? ""}
+            onChange={(event) => onChangeSeries(event.target.value)}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition-colors focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            disabled={!effectiveSeriesCategoryId || isLoadingSeries}
+          >
+            <option value="">
+              {isLoadingSeries
+                ? "Loading series…"
+                : seriesOptions.length
+                  ? "Select a series"
+                  : "No series available"}
+            </option>
+            {seriesOptions.map((series) => (
+              <option key={series.id} value={series.id}>
+                {series.title}
+              </option>
+            ))}
           </select>
         </label>
       </div>
-      {metricHasNoAgeBreakdown && (
-        <p className="text-[10px] text-slate-400">
-          {selection.metric === "earnings"
-            ? "Median weekly earnings are only available for all workers in this demo."
-            : "This series is only available as an aggregate index in this demo (no age breakdowns)."}
+      {metaError && (
+        <p className="text-[10px] text-rose-500">
+          {metaError}
         </p>
       )}
     </div>
