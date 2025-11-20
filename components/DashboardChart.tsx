@@ -104,12 +104,12 @@ const SERIES_COLORS = [
     backgroundColor: "rgba(37, 99, 235, 0.15)",
   },
   {
-    borderColor: "rgb(16, 185, 129)", // emerald-500
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
-  },
-  {
     borderColor: "rgb(249, 115, 22)", // orange-500
     backgroundColor: "rgba(249, 115, 22, 0.15)",
+  },
+  {
+    borderColor: "rgb(148, 163, 184)", // slate-400 (fallback)
+    backgroundColor: "rgba(148, 163, 184, 0.18)",
   },
 ];
 

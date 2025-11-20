@@ -232,6 +232,17 @@ type FredApiCategorySeriesResponse = {
   seriess: FredApiCategorySeries[];
 };
 
+type FredApiSeriesDetails = {
+  id: string;
+  title: string;
+  units: string;
+  frequency: string;
+};
+
+type FredApiSeriesDetailsResponse = {
+  seriess: FredApiSeriesDetails[];
+};
+
 const FRED_API_BASE = "https://api.stlouisfed.org/fred";
 
 function getFredApiKey(): string {
@@ -312,37 +323,47 @@ function toAnnualizedMonthlyChange(
 export async function fetchFredSeries(
   seriesId: FredSeriesId,
 ): Promise<FredSeriesNormalized> {
-  const json = await fredFetch<FredApiSeriesResponse>("/series/observations", {
-    series_id: seriesId,
-    observation_start: "1950-01-01",
-  });
+  const [observationsJson, detailsJson] = await Promise.all([
+    fredFetch<FredApiSeriesResponse>("/series/observations", {
+      series_id: seriesId,
+      observation_start: "1950-01-01",
+    }),
+    fredFetch<FredApiSeriesDetailsResponse>("/series", {
+      series_id: seriesId,
+    }),
+  ]);
 
-  const rawObservations: FredObservation[] = json.observations.map((obs) => {
-    const trimmed = obs.value.trim();
-    if (trimmed === "." || trimmed === "") {
-      return { date: obs.date, value: null };
-    }
-    const parsed = Number.parseFloat(trimmed);
-    return {
-      date: obs.date,
-      value: Number.isFinite(parsed) ? parsed : null,
-    };
-  });
+  const rawObservations: FredObservation[] = observationsJson.observations.map(
+    (obs) => {
+      const trimmed = obs.value.trim();
+      if (trimmed === "." || trimmed === "") {
+        return { date: obs.date, value: null };
+      }
+      const parsed = Number.parseFloat(trimmed);
+      return {
+        date: obs.date,
+        value: Number.isFinite(parsed) ? parsed : null,
+      };
+    },
+  );
 
   const isCpi = seriesId === "CPIAUCSL";
   const observations = isCpi
     ? toAnnualizedMonthlyChange(rawObservations)
     : rawObservations;
 
+  const details = detailsJson.seriess?.[0];
+
   return {
     id: seriesId,
     title:
+      details?.title ??
       LABOR_SERIES_CONFIG.find((option) => option.id === seriesId)?.label ??
       seriesId,
     units: isCpi
       ? "Percent, annualized monthly change"
-      : json.units ?? null,
-    frequency: json.observation_end ? null : null,
+      : details?.units ?? observationsJson.units ?? null,
+    frequency: details?.frequency ?? null,
     observations,
   };
 }
@@ -446,14 +467,19 @@ export async function fetchFredCategorySeries(
     },
   );
 
-  const series = json.seriess ?? [];
+  const series = (json.seriess ?? []).filter((item) => {
+    const title = item.title ?? "";
+    return !title.toUpperCase().includes("DISCONTINUED");
+  });
 
-  return series.map((item) => ({
-    id: item.id as FredSeriesId,
-    title: item.title,
-    units: item.units ?? null,
-    frequency: item.frequency ?? null,
-  }));
+  return series
+    .map((item) => ({
+      id: item.id as FredSeriesId,
+      title: item.title,
+      units: item.units ?? null,
+      frequency: item.frequency ?? null,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
 }
 
 

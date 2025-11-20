@@ -92,7 +92,11 @@ export default function Dashboard() {
         categories: FredCategory[];
       };
 
-      setRootCategories(json.categories ?? []);
+      const categories = (json.categories ?? []).slice().sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+
+      setRootCategories(categories);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unexpected error loading FRED categories.";
@@ -137,9 +141,13 @@ export default function Dashboard() {
           categories: FredCategory[];
         };
 
+        const categories = (json.categories ?? []).slice().sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
+
         setChildrenByParent((prev) => ({
           ...prev,
-          [parentCategoryId]: json.categories ?? [],
+          [parentCategoryId]: categories,
         }));
       } catch (err) {
         const message =
@@ -381,6 +389,18 @@ export default function Dashboard() {
     });
   };
 
+  const handleResetChart = () => {
+    setSelection(DEFAULT_SELECTION);
+    setData(null);
+    setError(null);
+    setMetaError(null);
+    setAvailableMinDate(null);
+    setAvailableMaxDate(null);
+    setSelectedMinDate("");
+    setSelectedMaxDate("");
+    setDualAxisEnabled(false);
+  };
+
   const handleExportPng = () => {
     const instance = chartRef.current;
     if (!instance) return;
@@ -391,19 +411,100 @@ export default function Dashboard() {
     a.click();
   };
 
+  const handleDownloadData = () => {
+    if (!data || !data.dates.length || activeSeries.length === 0) {
+      return;
+    }
+
+    const withinRange = (date: string) => {
+      if (selectedMinDate && date < selectedMinDate) return false;
+      if (selectedMaxDate && date > selectedMaxDate) return false;
+      return true;
+    };
+
+    const activeIndexes: number[] = [];
+    const dates: string[] = [];
+
+    data.dates.forEach((date, index) => {
+      if (withinRange(date)) {
+        activeIndexes.push(index);
+        dates.push(date);
+      }
+    });
+
+    if (!dates.length) {
+      return;
+    }
+
+    const activeSeriesData = data.series.filter((series) =>
+      activeSeries.includes(series.id),
+    );
+
+    if (!activeSeriesData.length) {
+      return;
+    }
+
+    const csvEscape = (value: string) => {
+      if (/[",\n]/.test(value)) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    };
+
+    const header = [
+      "date",
+      ...activeSeriesData.map((series) => series.title),
+    ]
+      .map(csvEscape)
+      .join(",");
+
+    const rows = dates.map((date, idx) => {
+      const i = activeIndexes[idx];
+      const values = activeSeriesData.map((series) => {
+        const value = series.values[i];
+        return value == null ? "" : String(value);
+      });
+      return [date, ...values].join(",");
+    });
+
+    const csvContent = [header, ...rows].join("\n");
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "fred-dashboard-data.csv";
+    a.click();
+
+    URL.revokeObjectURL(url);
+  };
+
   const hasData = data && data.dates.length > 0;
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-800">
-            FRED series selection
-          </h2>
-          <p className="text-xs text-slate-500">
-            Choose up to two FRED series (category, subcategory, and series) to
-            compare. Data is fetched directly from the FRED API.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">
+                FRED series selection
+              </h2>
+              <p className="text-xs text-slate-500">
+                Choose up to two FRED series (category, subcategory, and series) to
+                compare. Data is fetched directly from the FRED API.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetChart}
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
+            >
+              Reset chart
+            </button>
+          </div>
 
           <div className="flex flex-col gap-3">
             <SeriesSelectionRow
@@ -498,6 +599,14 @@ export default function Dashboard() {
                 disabled={!hasData}
               >
                 Download PNG
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadData}
+                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+                disabled={!hasData}
+              >
+                Download data
               </button>
             </div>
           </div>
