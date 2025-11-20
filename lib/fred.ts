@@ -12,25 +12,13 @@ export type AgeBandId =
   | "age_25_54"
   | "age_55_plus";
 
-export type FredSeriesId =
-  // Unemployment rate
-  | "UNRATE" // Unemployment Rate: 16 years and over
-  | "LNS14000012" // Unemployment Rate: 16 to 19 years
-  | "LNS14000036" // Unemployment Rate: 20 to 24 years
-  | "LNS14000089" // Unemployment Rate: 25 to 54 years
-  | "LNS14000097" // Unemployment Rate: 55 years and over
-  // Labor force participation
-  | "CIVPART" // Labor Force Participation Rate: 16 years and over
-  | "LNS11300012" // Labor Force Participation Rate: 16 to 19 years
-  | "LNS11300036" // Labor Force Participation Rate: 20 to 24 years
-  | "LNS11300060" // Labor Force Participation Rate: 25 to 54 years
-  | "LNS11300097" // Labor Force Participation Rate: 55 years and over
-  // Median usual weekly earnings (all workers)
-  | "LEU0252881600A"
-  // Consumer Price Index (all urban consumers, all items)
-  | "CPIAUCSL"
-  // Real Gross Domestic Product (chained 2017 dollars, annual rate)
-  | "A191RL1Q225SBEA";
+/**
+ * FRED series identifier.
+ *
+ * For curated labor-market series we still use concrete IDs (e.g. "UNRATE"),
+ * but this type is widened to allow *any* FRED series ID returned by the API.
+ */
+export type FredSeriesId = string;
 
 export type LaborSeriesConfig = {
   id: FredSeriesId;
@@ -223,7 +211,69 @@ type FredApiSeriesResponse = {
   observations: FredApiObservation[];
 };
 
+type FredApiCategory = {
+  id: number;
+  name: string;
+  parent_id: number | null;
+};
+
+type FredApiCategoryResponse = {
+  categories: FredApiCategory[];
+};
+
+type FredApiCategorySeries = {
+  id: string;
+  title: string;
+  frequency: string | null;
+  units: string | null;
+};
+
+type FredApiCategorySeriesResponse = {
+  seriess: FredApiCategorySeries[];
+};
+
 const FRED_API_BASE = "https://api.stlouisfed.org/fred";
+
+function getFredApiKey(): string {
+  const apiKey = process.env.FRED_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "FRED_API_KEY is not set. Add it to your environment to fetch data.",
+    );
+  }
+  return apiKey;
+}
+
+async function fredFetch<T>(
+  path: string,
+  searchParams: Record<string, string | number>,
+): Promise<T> {
+  const apiKey = getFredApiKey();
+
+  const params = new URLSearchParams({
+    api_key: apiKey,
+    file_type: "json",
+  });
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    params.set(key, String(value));
+  }
+
+  const url = `${FRED_API_BASE}${path}?${params.toString()}`;
+
+  const res = await fetch(url, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `FRED request to ${path} failed with status ${res.status}.`,
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return res.json();
+}
 
 function toAnnualizedMonthlyChange(
   observations: FredObservation[],
@@ -262,33 +312,10 @@ function toAnnualizedMonthlyChange(
 export async function fetchFredSeries(
   seriesId: FredSeriesId,
 ): Promise<FredSeriesNormalized> {
-  const apiKey = process.env.FRED_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "FRED_API_KEY is not set. Add it to your environment to fetch data.",
-    );
-  }
-
-  const params = new URLSearchParams({
+  const json = await fredFetch<FredApiSeriesResponse>("/series/observations", {
     series_id: seriesId,
-    api_key: apiKey,
-    file_type: "json",
     observation_start: "1950-01-01",
   });
-
-  const url = `${FRED_API_BASE}/series/observations?${params.toString()}`;
-
-  const res = await fetch(url, {
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(
-      `FRED request failed for ${seriesId} with status ${res.status}.`,
-    );
-  }
-
-  const json = (await res.json()) as FredApiSeriesResponse;
 
   const rawObservations: FredObservation[] = json.observations.map((obs) => {
     const trimmed = obs.value.trim();
@@ -360,4 +387,73 @@ export async function fetchFredSeriesBundle(
     series: seriesWithValues,
   };
 }
+
+export type FredCategory = {
+  id: number;
+  name: string;
+  parentId: number | null;
+};
+
+export type FredSeriesMeta = {
+  id: FredSeriesId;
+  title: string;
+  units: string | null;
+  frequency: string | null;
+};
+
+export async function fetchFredCategory(
+  categoryId: number,
+): Promise<FredCategory | null> {
+  const json = await fredFetch<FredApiCategoryResponse>("/category", {
+    category_id: categoryId,
+  });
+
+  const category = json.categories?.[0];
+  if (!category) {
+    return null;
+  }
+
+  return {
+    id: category.id,
+    name: category.name,
+    parentId:
+      typeof category.parent_id === "number" ? category.parent_id : null,
+  };
+}
+
+export async function fetchFredCategoryChildren(
+  parentCategoryId: number,
+): Promise<FredCategory[]> {
+  const json = await fredFetch<FredApiCategoryResponse>("/category/children", {
+    category_id: parentCategoryId,
+  });
+
+  return (json.categories ?? []).map((category) => ({
+    id: category.id,
+    name: category.name,
+    parentId:
+      typeof category.parent_id === "number" ? category.parent_id : null,
+  }));
+}
+
+export async function fetchFredCategorySeries(
+  categoryId: number,
+): Promise<FredSeriesMeta[]> {
+  const json = await fredFetch<FredApiCategorySeriesResponse>(
+    "/category/series",
+    {
+      category_id: categoryId,
+    },
+  );
+
+  const series = json.seriess ?? [];
+
+  return series.map((item) => ({
+    id: item.id as FredSeriesId,
+    title: item.title,
+    units: item.units ?? null,
+    frequency: item.frequency ?? null,
+  }));
+}
+
 
